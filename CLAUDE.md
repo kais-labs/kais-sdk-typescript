@@ -45,6 +45,11 @@ npm test         # runs vitest
 
 ## Code Quality & Best Practices
 
+This SDK follows the **Google TypeScript Style Guide**
+(https://google.github.io/styleguide/tsguide.html). The rules below are
+project-specific overlays; where this file is silent, defer to the Google
+guide. Reviewers may cite either Google guide sections or these overlays.
+
 ### TypeScript Standards (MANDATORY)
 
 - **Strict TypeScript** — `strict: true` in tsconfig, zero `// @ts-ignore` without justification
