@@ -16,6 +16,8 @@ export interface KaisHTTPOptions {
   apiKey?: string;
   /** Kubernetes namespace to operate in. Defaults to KAIS_NAMESPACE env or "default". */
   namespace?: string;
+  /** Request timeout in milliseconds. Defaults to 30000 (30s). Set to 0 to disable. */
+  timeoutMs?: number;
 }
 
 /**
@@ -40,6 +42,7 @@ export class KaisHTTP {
   private readonly baseUrl: string;
   private readonly apiKey: string;
   private readonly namespace: string;
+  private readonly timeoutMs: number;
 
   constructor(opts?: KaisHTTPOptions) {
     this.baseUrl = (
@@ -47,6 +50,7 @@ export class KaisHTTP {
     ).replace(/\/+$/, "");
     this.apiKey = opts?.apiKey ?? env("KAIS_API_KEY") ?? "";
     this.namespace = opts?.namespace ?? env("KAIS_NAMESPACE") ?? "default";
+    this.timeoutMs = opts?.timeoutMs ?? 30_000;
 
     const requestFn = this.request.bind(this);
     const rawRequestFn = this.rawRequest.bind(this);
@@ -70,9 +74,10 @@ export class KaisHTTP {
   private async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    signal?: AbortSignal
   ): Promise<T> {
-    const resp = await this.rawRequest(method, path, body);
+    const resp = await this.rawRequest(method, path, body, signal);
 
     // 204 No Content — return undefined as T (for delete operations).
     if (resp.status === 204) {
@@ -102,11 +107,15 @@ export class KaisHTTP {
   /**
    * Perform a raw HTTP request and return the Response object.
    * Used internally for streaming and file operations.
+   *
+   * @param signal Optional AbortSignal for caller-driven cancellation.
+   *   Combined with the configured timeout via AbortSignal.any().
    */
   private async rawRequest(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    signal?: AbortSignal
   ): Promise<Response> {
     const url = `${this.basePath}${path}`;
 
@@ -119,17 +128,28 @@ export class KaisHTTP {
     let fetchBody: BodyInit | undefined;
 
     if (body instanceof FormData) {
-      // Let fetch set Content-Type with boundary for multipart.
       fetchBody = body;
     } else if (body !== undefined) {
       headers["Content-Type"] = "application/json";
       fetchBody = JSON.stringify(body);
     }
 
+    const signals: AbortSignal[] = [];
+    if (this.timeoutMs > 0) {
+      signals.push(AbortSignal.timeout(this.timeoutMs));
+    }
+    if (signal) {
+      signals.push(signal);
+    }
+
+    const combinedSignal =
+      signals.length > 0 ? AbortSignal.any(signals) : undefined;
+
     return fetch(url, {
       method,
       headers,
       body: fetchBody,
+      signal: combinedSignal,
     });
   }
 }

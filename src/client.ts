@@ -70,12 +70,17 @@ export class KaisClient {
 
   /**
    * Send a message and wait for a reply on the cell's outbox.
+   *
+   * @param signal Optional AbortSignal to cancel the pending request externally.
    */
   async ask(
     cellName: string,
     content: string,
-    timeout: number = 30000
+    opts?: { timeout?: number; signal?: AbortSignal }
   ): Promise<Message> {
+    const timeout = opts?.timeout ?? 30_000;
+    const signal = opts?.signal;
+
     const nc = this.ensureConnected();
     const msg = Message.create(this.appName, cellName, content);
 
@@ -85,17 +90,32 @@ export class KaisClient {
         reject(new Error(`ask() timed out after ${timeout}ms waiting for reply from ${cellName}`));
       }, timeout);
 
+      const onAbort = (): void => {
+        clearTimeout(timer);
+        sub.unsubscribe();
+        reject(new Error(`ask() aborted for cell ${cellName}`));
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          clearTimeout(timer);
+          reject(new Error(`ask() aborted for cell ${cellName}`));
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+
       const sub = nc.subscribe(this.outboxSubject(cellName), {
         callback: (_err, natsMsg) => {
           try {
             const data = this.jc.decode(natsMsg.data);
             const reply = Message.fromJSON(data);
-            // Match reply to our message by checking the 'to' field targets us
             if (
               reply.to === this.appName ||
               reply.to.startsWith("user")
             ) {
               clearTimeout(timer);
+              if (signal) signal.removeEventListener("abort", onAbort);
               sub.unsubscribe();
               resolve(reply);
             }

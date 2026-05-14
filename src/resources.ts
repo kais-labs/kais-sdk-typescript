@@ -21,14 +21,15 @@ export type RequestFn = <T>(
   method: string,
   path: string,
   body?: unknown,
-  init?: RequestInit
+  signal?: AbortSignal
 ) => Promise<T>;
 
 /** Type for building raw fetch requests (for streaming). */
 export type RawRequestFn = (
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  signal?: AbortSignal
 ) => Promise<Response>;
 
 // ---------------------------------------------------------------------------
